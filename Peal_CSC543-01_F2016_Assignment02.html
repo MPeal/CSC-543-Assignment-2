@@ -1,0 +1,971 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <style>
+      body {
+        margin: 0px;
+        padding: 0px;
+      }
+	  
+	  #playerNum{
+		font-color: gray;
+	  }
+	  
+	  #ballCounts > div{
+		display: inline-block;
+		left: 200px;
+		border: solid 1px;
+		border-color: green;
+		width: 75px;
+		height: 75px;
+		font-size: 11px;
+		text-align: center;
+	  }
+	  
+	  #scores > div{
+	  	display: inline-block;
+		left: 200px;
+		border: solid 1px;
+		border-color: red;
+		width: 75px;
+		height: 75px;
+		font-size: 11px;
+		text-align: center;
+	  }
+    </style>
+  </head>
+  <body>
+<div id="parentDiv">
+</div>
+	<div id="inputDiv">
+	<input id="playerNum" onfocus="if (this.value=='Number of Players (5 max)') this.value =''" type="text" value="Number of Players (5 max)" style="position:absolute; top: 50px; left:200px;"></input>
+	<br>
+	<button id="addButton" onclick="addPlayers()" style="position:absolute; top:75px; left:200px;">Add Players</button>
+	</div>
+  
+	<input id="startAnimationButtonId" type="button" value="Start Bouncing Around" onclick="ballcheck()" style="position:absolute; top: 150px; left: 200px;"/>
+	
+	<div id="ballCounts" style="position:absolute; top:210px; left:200px;">
+	</div>
+	
+	<div id="scores" style="position:absolute; top:325px; left:200px;">
+	</div>
+	<div style="left:700px;top:50px;position:absolute;">
+    <canvas tabindex='0' id="myCanvas" width="400" height="560" style="border: solid black 5px;"></canvas>
+	<br>
+	</div>
+	
+	<div id="countdownDiv" style="position: absolute; top: 425px; left:200px;">
+	</div>
+    <script>
+	var players = [];
+	var numOfPlayers = NaN;
+	var n = 1;
+	var interval = NaN;
+	var p = 0;
+	var b = 0;
+	var timer = 15;
+	
+	// retrieve the canvas element	
+	var canvas = document.getElementById('myCanvas');
+	
+	// add click event listener to the canvas element	
+    canvas.addEventListener('click', on_canvas_click, false);	
+	
+	// create an empty object literal for storing the canvas state ( balls, and targets) 	
+	var canvasState = {};
+	
+	// fields for targets on the top edge, bottom edge, right edge, and left edge, respectively
+	canvasState.t_horz_targets=[];
+	canvasState.b_horz_targets=[];
+	canvasState.r_vert_targets=[];
+	canvasState.l_vert_targets=[];
+	
+	// fields specifying the dimensions of the horizontal and vertical targets
+	canvasState.horz_target_width = 30;
+	canvasState.horz_target_height = parseInt(canvas.style.borderWidth)+5; 
+	
+	canvasState.vert_target_width = parseInt(canvas.style.borderWidth)+5; 
+	canvasState.vert_target_height = 40;
+	
+	//  field for storing the ball objects contained in the canvas
+	canvasState.balls=[];		
+		
+	
+	function Target(id, topLeftX, topLeftY, width, height, score)
+	{
+		this.id = id;
+		this.x = topLeftX;              // x coordinate of top left  
+		this.y = topLeftY;              // y coordinate of top left
+		this.width = width;         // width of the target
+		this.height = height        // height of the target
+		this.score = score;
+	}
+	
+	function Ball(score, id, centerX, centerY, radius, velocityX, velocityY, player)
+	{
+	if(players.length>0)
+		{
+		this.score = score;
+		this.id = id;			// id of the ball
+		this.x = centerX;		// x coordinate of the center
+		this.y = centerY;		// y coordinate of the center 
+		this.r = radius;		// radius of the ball 
+		this.vx = velocityX;	// x component of the velocity of the ball
+		this.vy = velocityY;	// y component of the velocity of the ball  
+		this.player = player;
+		this.hasCollided = false;          // a boolean to keep track of whether this ball has collided with other balls
+		this.collidedballsIds = [];		   // an array to keep track of the ids of the balls this ball has collided with	
+        this.fillStyle = '#'+(0x1000000+(Math.random())*0xffffff).toString(16).substr(1,6);                            // random color
+		}
+	}
+	
+	function roundToTwo(n) 
+	{    
+		return Number(n.toFixed(2));
+	}
+		
+	Ball.prototype.move = function()
+	{
+				
+		// function for testing collision with a left edge target
+		function testLVertTargetCollisions(ball){
+			
+			var y = ball.y;
+			for (var i=0; i< canvasState.l_vert_targets.length; i++)
+			{       // test for each of the targets
+				var vtarget = canvasState.l_vert_targets[i];                // retrieve the target from the array
+				var currentFlag = "leftTargetFlag"+i;
+				if ( y>vtarget.y && y<(vtarget.y+vtarget.height) )
+				{         // check if the vertical position of the ball is within the vertical boundary of the target
+					//alert('hit vert target')
+					//alert(y+" "+vtarget.y+" "+vtarget.height)
+					
+					//Add to the respective players score with target score * ball score
+					ball.player.score += ((vtarget.score * ball.score)/ball.player.ballCount);
+					ball.player.score = roundToTwo(ball.player.score);
+					console.log("score gained by "+ ball.player.id+": " + (vtarget.score * ball.score));
+					console.log("current player score: " + ball.player.score);
+					
+					//Update current player score, divide the score by the number of balls in play for that player
+					//console.log("score after division: "+(ball.player.score)/(ball.player.ballCount));
+					//ball.player.score = (ball.player.score)/(ball.player.ballCount);
+					console.log("------------");
+					
+					//Update target score by subtracting (1/2 x ball score) from the target score
+					vtarget.score = Math.round(vtarget.score - ((1/2)*ball.score));
+					
+					//Update ball score by multiplying by 1.1
+					ball.score = Math.round(ball.score * 1.1);
+					
+					//Update the flags
+					clearFlags();
+					drawFlags();
+					
+					//Update the scores
+					clearScoreDivs();
+					createScoreDivs();
+
+					
+					//Update the balls
+					canvasState.draw();
+					
+					document.getElementById(currentFlag).style.backgroundColor="pink";
+					function resetLFlagColor()
+					{
+						for(var j=0; j < canvasState.l_vert_targets.length; j++)
+						{
+							currentFlag = "leftTargetFlag"+j;
+							document.getElementById(currentFlag).style.backgroundColor="blue";
+						}
+					}
+					window.setInterval(resetLFlagColor, 250);
+				} 
+			}				
+		}
+	
+		
+		// function for testing collision with a right edge target
+		function testRVertTargetCollisions(ball)
+		{
+			var y = ball.y;
+			
+			for (var i=0; i< canvasState.r_vert_targets.length; i++)
+			{
+				var vtarget = canvasState.r_vert_targets[i];
+				var currentFlag = "rightTargetFlag"+i;
+				if ( y>vtarget.y && y<(vtarget.y+vtarget.height) )
+				{
+					//alert('hit vert target')
+					//alert(y+" "+vtarget.y+" "+vtarget.height)
+					
+					//Add to the respective players score with target score * ball score
+					ball.player.score += ((vtarget.score * ball.score)/ball.player.ballCount);
+					ball.player.score = roundToTwo(ball.player.score);
+					console.log("score gained by "+ ball.player.id+": " + (vtarget.score * ball.score));
+					console.log("current player score: " + ball.player.score);
+					
+					//Update current player score, divide the score by the number of balls in play for that player
+					//console.log("score after division: "+(ball.player.score)/(ball.player.ballCount));
+					//ball.player.score = (ball.player.score)/(ball.player.ballCount);
+					console.log("------------");
+					
+					//Update target score by subtracting (1/2 x ball score) from the target score
+					vtarget.score = Math.round(vtarget.score - ((1/2)*ball.score));
+					
+					//Update ball score by multiplying by 1.1
+					ball.score = Math.round(ball.score * 1.1);
+					
+					//Update the flags
+					clearFlags();
+					drawFlags();
+					
+					//Update the scores
+					clearScoreDivs();
+					createScoreDivs();
+
+					
+					//Update the balls
+					canvasState.draw();
+					
+					document.getElementById(currentFlag).style.backgroundColor="yellow";
+					function resetRFlagColor()
+					{
+						for(var j=0; j < canvasState.r_vert_targets.length; j++)
+						{
+							currentFlag = "rightTargetFlag"+j;
+							document.getElementById(currentFlag).style.backgroundColor="teal";
+						}
+					}
+					window.setInterval(resetRFlagColor, 250);
+				}
+			}
+		}
+		
+		// function for testing collision with a top edge target				
+		function testTHorzTargetCollisions(ball)
+		{
+			var x = ball.x;
+			
+			for (var i=0; i< canvasState.t_horz_targets.length; i++)
+			{
+				htarget = canvasState.t_horz_targets[i];
+				var currentFlag = "topTargetFlag"+i;
+				if ( x>htarget.x && x<(htarget.x+htarget.width) )
+				{
+					//alert('hit horz target')
+					//alert(x+" "+htarget.x+" "+htarget.width)
+					//Add to the respective players score with target score * ball score
+					ball.player.score += ((htarget.score * ball.score)/ball.player.ballCount);
+					ball.player.score = roundToTwo(ball.player.score);
+					console.log("score gained by "+ ball.player.id+": " + (htarget.score * ball.score));
+					console.log("current player score: " + ball.player.score);
+					
+					//Update current player score, divide the score by the number of balls in play for that player
+					//console.log("score after division: "+(ball.player.score)/(ball.player.ballCount));
+					//ball.player.score = (ball.player.score)/(ball.player.ballCount);
+					console.log("------------");
+					
+					//Update target score by subtracting (1/2 x ball score) from the target score
+					htarget.score = Math.round(htarget.score - ((1/2)*ball.score));
+					
+					//Update ball score by multiplying by 1.1
+					ball.score = Math.round(ball.score * 1.1);
+					
+					//Update the flags
+					clearFlags();
+					drawFlags();
+					
+					//Update the scores
+					clearScoreDivs();
+					createScoreDivs();
+
+					
+					//Update the balls
+					canvasState.draw();
+					
+					//Make the flags flash
+					document.getElementById(currentFlag).style.backgroundColor="#00FFFF";
+					function resetTFlagColor()
+					{
+						for(var j=0; j < canvasState.t_horz_targets.length; j++)
+						{
+							currentFlag = "topTargetFlag"+j;
+							document.getElementById(currentFlag).style.backgroundColor="red";
+						}
+					}
+					window.setInterval(resetTFlagColor, 250);
+				} 
+			}	
+		}
+		
+		// function for testing collision with a bottom edge target				
+		function testBHorzTargetCollisions(ball)
+		{
+		
+			var x = ball.x;
+			
+			for (var i=0; i< canvasState.b_horz_targets.length; i++)
+			{
+				var htarget = canvasState.b_horz_targets[i];
+				var currentFlag = "bottomTargetFlag"+i;
+				if ( x>htarget.x && x<(htarget.x+htarget.width) )
+				{
+					//alert('hit horz target')
+					//alert(x+" "+htarget.x+" "+htarget.width)
+					
+					ball.player.score += ((htarget.score * ball.score)/ball.player.ballCount);
+					ball.player.score = roundToTwo(ball.player.score);
+					console.log("score gained by "+ ball.player.id+": " + (htarget.score * ball.score));
+					console.log("current player score: " + ball.player.score);
+					
+					//Update current player score, divide the score by the number of balls in play for that player
+					//console.log("score after division: "+(ball.player.score)/(ball.player.ballCount));
+					//ball.player.score = (ball.player.score)/(ball.player.ballCount);
+					console.log("------------");
+					
+					//Update target score by subtracting (1/2 x ball score) from the target score
+					htarget.score = Math.round(htarget.score - ((1/2)*ball.score));
+					
+					//Update ball score by multiplying by 1.1
+					ball.score = Math.round(ball.score * 1.1);
+					
+					//Update the flags
+					clearFlags();
+					drawFlags();
+					
+					//Update the scores
+					clearScoreDivs();
+					createScoreDivs();
+
+					
+					//Update the balls
+					canvasState.draw();
+					
+					document.getElementById(currentFlag).style.backgroundColor="red";
+					function resetBFlagColor()
+					{
+						for(var j=0; j < canvasState.b_horz_targets.length; j++)
+						{
+							currentFlag = "bottomTargetFlag"+j;
+							document.getElementById(currentFlag).style.backgroundColor="green";
+						}
+					}
+					window.setInterval(resetBFlagColor, 250);
+				} 
+			}				
+		}
+				
+		if(this.x+this.r>=canvas.width){        // if the ball hits the right edge
+			this.x = canvas.width-this.r; 		// reset the ball position at touching the right edge					
+			this.vx*=-1;   						// reverse the velocity					
+			testRVertTargetCollisions(this);  // test for collision with any right edge target					
+		}else if(this.x-this.r<=0){   // if the ball hits the left edge				
+			this.x=this.r;            // reset the ball position at touching the left edge
+			this.vx*=-1;              // reverse the velocity
+			testLVertTargetCollisions(this);	// test for collision with any left edge target						
+		}
+			
+		if(this.y+this.r>=canvas.height){    // if the ball hits the bottom edge ...
+			this.y = canvas.height-this.r;   // ...
+			this.vy*=-1;                     // ... 
+			testBHorzTargetCollisions(this);     // ...
+		}else if(this.y-this.r<=0){      // if the ball hits the top edge
+			this.y=this.r;               // ... 
+			this.vy*=-1;                 // ...
+			testTHorzTargetCollisions(this); // ...
+		}
+		
+		
+		// update the position of the ball
+		this.x+=this.vx;
+		this.y+=this.vy;
+	}	
+	
+	
+		
+
+	// random color : '#'+(0x1000000+(Math.random())*0xffffff).toString(16).substr(1,6)
+	
+	// utility function for computing the distance between two points (x1,y1) and (x2,y2)
+	function dist(x1,y1,x2,y2){
+		return Math.sqrt(Math.pow(x1-x2,2)+Math.pow(y1-y2,2));	
+	}
+	
+	
+	
+	// canvas on click event listener
+	function on_canvas_click(ev)
+	{
+			
+		// subtract the left (top) offset and canvas border width from x(y) coordinate of the event to make the coordinates relative to the top-left corner of the canvas
+		var x = ev.clientX - canvas.parentElement.offsetLeft - parseInt(canvas.style.borderWidth)+window.scrollX;
+		var y = ev.clientY - canvas.parentElement.offsetTop - parseInt(canvas.style.borderWidth)+window.scrollY;
+		
+		if( x>canvas.width )
+		{
+			//if there are no right targets, make the first one
+			if (canvasState.r_vert_targets.length == 0)
+			{
+				canvasState.r_vert_targets.push( new Target(   canvasState.r_vert_targets.length,                  // id
+														   canvas.width-canvasState.vert_target_width,    // x coordinate of the top left corner of this target
+														   y-canvasState.vert_target_height/2,				   // y coordinate of the top left corner of this target
+														   canvasState.vert_target_width,                      // width of this target
+														   canvasState.vert_target_height,                     // height of this target
+														   Math.round(Math.random()*(201-100) + 100)
+															)		
+										   );
+			}
+			else if(canvasState.r_vert_targets.length > 0) //if there are right targets, start checking the other right targets to avoid overlap
+			{
+					var i = 0;
+					while (i < canvasState.r_vert_targets.length)
+					{
+						var target = canvasState.r_vert_targets[i];
+						var y = ev.clientY - canvas.parentElement.offsetTop - parseInt(canvas.style.borderWidth);
+						if (y >= target.y-target.height && y <= (target.y+(2*target.height)))
+						{
+							i = NaN;
+						}
+						else
+						{
+							i++;
+						}
+						
+						//if the loop makes it through the existing right targets without finding overlap, create the target
+						if (i == canvasState.r_vert_targets.length)
+						{
+							canvasState.r_vert_targets.push( new Target(   canvasState.r_vert_targets.length,                  // id
+														   canvas.width-canvasState.vert_target_width,    // x coordinate of the top left corner of this target
+														   y-canvasState.vert_target_height/2,				   // y coordinate of the top left corner of this target
+														   canvasState.vert_target_width,                      // width of this target
+														   canvasState.vert_target_height,                     // height of this target
+														   Math.round(Math.random()*(201-100) + 100)))
+										
+							i = 0;
+						}										
+					}
+			}		
+			
+		}
+		else if(x<0 )
+		{   
+			if (canvasState.l_vert_targets.length == 0)
+			{
+				canvasState.l_vert_targets.push( new Target(   canvasState.l_vert_targets.length,                  // id
+														   0,												  // x coordinate of the top left corner of this target	
+			                                               y-canvasState.vert_target_height/2,                // y coordinate of the top left corner of this target
+														   canvasState.vert_target_width,                     // width of this target
+														   canvasState.vert_target_height,                     // height of this target
+														   Math.round(Math.random()*(200-100) + 100)
+															)	
+									       );
+			}
+			else if(canvasState.l_vert_targets.length > 0) //if there are left targets, start checking the other left targets to avoid overlap
+			{
+					var i = 0;
+					while (i < canvasState.l_vert_targets.length)
+					{
+						var target = canvasState.l_vert_targets[i];
+						var y = ev.clientY - canvas.parentElement.offsetTop - parseInt(canvas.style.borderWidth);
+						if (y >= target.y-target.height && y <= (target.y+(2*target.height)))
+						{
+							i = NaN;
+						}
+						else
+						{
+							i++;
+						}
+					
+						//if the loop makes it through the existing left targets without finding overlap, create the target
+						if (i == canvasState.l_vert_targets.length)
+						{
+							canvasState.l_vert_targets.push( new Target(   canvasState.l_vert_targets.length,                  // id
+														   0,												  // x coordinate of the top left corner of this target	
+			                                               y-canvasState.vert_target_height/2,                // y coordinate of the top left corner of this target
+														   canvasState.vert_target_width,                     // width of this target
+														   canvasState.vert_target_height,                     // height of this target
+														   Math.round(Math.random()*(200-100) + 100)
+															)	
+									       );
+							i = 0;
+						}										
+					}
+			}
+		    
+		}
+		else if (y>canvas.height )
+		{
+			
+				// if the click event was on the bottom edge border of the canvas, add a bottom horz target
+			if (canvasState.b_horz_targets.length == 0)
+			{
+				canvasState.b_horz_targets.push( new Target(   canvasState.b_horz_targets.length,                  
+														   x-canvasState.horz_target_width/2,
+														   canvas.height-canvasState.horz_target_height,
+														   canvasState.horz_target_width,
+														   canvasState.horz_target_height,
+															Math.round(Math.random()*(100-50) + 50)														   
+															)	
+											);
+			}
+			else if(canvasState.b_horz_targets.length > 0) //if there are bottom targets, start checking the other bottom targets to avoid overlap
+			{
+					var i = 0;
+					while (i < canvasState.b_horz_targets.length)
+					{
+						var target = canvasState.b_horz_targets[i];
+						var x = ev.clientX - canvas.parentElement.offsetLeft - parseInt(canvas.style.borderWidth);
+						if (x >= target.x-target.width && x <= (target.x+(2*target.width)))
+						{
+							i = NaN;
+						}
+						else
+						{
+							i++;
+						}
+						
+						//if the loop makes it through the existing bottom targets without finding overlap, create the target
+						if (i == canvasState.b_horz_targets.length)
+						{
+							canvasState.b_horz_targets.push( new Target(   canvasState.b_horz_targets.length,                  
+														   x-canvasState.horz_target_width/2,
+														   canvas.height-canvasState.horz_target_height,
+														   canvasState.horz_target_width,
+														   canvasState.horz_target_height,
+														   Math.round(Math.random()*(100-50) + 50)														   
+															)	
+											);
+							i = 0;
+						}										
+					}
+			}										
+											
+			
+		}
+		else if(y<0)
+		{
+			// if the click event was on the top edge border of the canvas, add a top horz target
+			
+			//if there are no top horz targets, add the first one
+			if (canvasState.t_horz_targets.length == 0)
+			{
+				canvasState.t_horz_targets.push( new Target(   canvasState.t_horz_targets.length,                  
+														   x-canvasState.horz_target_width/2,
+														   0,
+														   canvasState.horz_target_width,
+														   canvasState.horz_target_height,                     // height of this target
+														   Math.round(Math.random()*(101-50) + 50)
+															)	
+											);
+			}
+			else if(canvasState.t_horz_targets.length > 0) //if there are top horz targets, start checking the other top horz targets to avoid overlap
+			{
+					var i = 0;
+					while (i < canvasState.t_horz_targets.length)
+					{
+						var target = canvasState.t_horz_targets[i];
+						var x = ev.clientX - canvas.parentElement.offsetLeft - parseInt(canvas.style.borderWidth);
+						if (x >= target.x-target.width && x <= (target.x+(2*target.width)))
+						{
+							i = NaN;
+						}
+						else
+						{
+							i++;
+						}
+						
+						//if the loop makes it through the existing top targets without finding overlap, create the target
+						if (i == canvasState.t_horz_targets.length)
+						{
+							canvasState.t_horz_targets.push( new Target(   canvasState.t_horz_targets.length,                  
+														   x-canvasState.horz_target_width/2,
+														   0,
+														   canvasState.horz_target_width,
+														   canvasState.horz_target_height,                     // height of this target
+														   Math.round(Math.random()*(101-50) + 50)
+															)	
+											);
+							i = 0;
+						}										
+					}
+			}
+		}
+		else
+		{
+			// if the click was within the canvas, add a ball
+			if(players.length <= 0)
+			{
+				alert("Add players first");
+			}
+			else if(players.length > 0)
+			{
+				var newBall = new Ball(Math.round(Math.random()*10),canvasState.balls.length,x,y,11, Math.floor(Math.random()*-6)+3, Math.floor(Math.random()*-8)+4);
+				canvasState.balls.push(newBall);
+			}
+		}
+		
+		// draw the canvas
+		canvasState.draw();
+		clearFlags();
+		drawFlags();
+	}
+	
+	function clearFlags()
+	{
+		document.getElementById("parentDiv").innerHTML = "";
+	}
+	
+		function drawFlags()
+	{
+		//wipe div to start so as to not pile up on the flags drawn
+		clearFlags();
+		
+		//draw flags for top targets
+		for (var i=0; i < canvasState.t_horz_targets.length; i++)
+		{
+			var target = canvasState.t_horz_targets[i];
+			document.getElementById("parentDiv").innerHTML+="<div id='topTargetFlag"+i+"' style='left:"+(target.x+699)+"px; position:absolute; top:"+(target.y+25)+"px; width:40px; height:15px; text-align:center; background-color: red; border:solid 1px black; color:white;'>"+target.score+"</div>";
+		}
+		
+		//draw flags for bottom targets
+		for (var i=0; i < canvasState.b_horz_targets.length; i++)
+		{
+			var target = canvasState.b_horz_targets[i];
+			document.getElementById("parentDiv").innerHTML+="<div id='bottomTargetFlag"+i+"' style='left:"+(target.x+699)+"px; position:absolute; top:"+(target.y+67)+"px; width:40px; height:15px; text-align:center; background-color: green; border:solid 1px black; color:white;'>"+target.score+"</div>";
+		}
+		
+		//draw flags for left targets
+		for (var i=0; i < canvasState.l_vert_targets.length; i++)
+		{
+			var target = canvasState.l_vert_targets[i];
+			document.getElementById("parentDiv").innerHTML+="<div id='leftTargetFlag"+i+"' style='left:"+(target.x+650)+"px; position:absolute; top:"+(target.y+65)+"px; width:40px; height:15px; text-align:center; background-color: blue; border:solid 1px black; color:white;'>"+target.score+"</div>";
+		}
+		
+		//draw flags for right targets
+		for (var i=0; i < canvasState.r_vert_targets.length; i++)
+		{
+			var target = canvasState.r_vert_targets[i];
+			document.getElementById("parentDiv").innerHTML+="<div id='rightTargetFlag"+i+"' style='left:"+(target.x+725)+"px; position:absolute; top:"+(target.y+65)+"px; width:40px; height:15px; text-align:center; background-color: teal; border:solid 1px black; color:white;'>"+target.score+"</div>";
+		}
+	}
+	
+	function assignBalls()
+	{
+		
+		while(b < canvasState.balls.length)
+		{
+			var player = players[p];
+			var ball = canvasState.balls[b];
+			player.ballArray.push(ball);
+			player.ballCount++;
+			ball.player = player;
+			b++;
+			if(p >= players.length-1)
+			{
+				p = 0;
+			}
+			else
+			{
+				p++;
+			}
+			
+		}
+		createBallCountDivs();
+	}
+	
+	// the method responsible for drawing the objects contained in the canvas 	
+	canvasState.draw=function(){
+		
+		var context = canvas.getContext('2d');
+      
+		clearCanvas();
+			
+		// draw the balls	
+		for(var i=0;i<canvasState.balls.length;i++){
+			
+			var ball=canvasState.balls[i];
+			
+			// draw the circle
+			context.beginPath();
+			context.arc(ball.x, ball.y, ball.r, 0, 2*Math.PI,true);
+			context.strokeStyle = '#000000';
+			context.stroke();
+			context.fillStyle = ball.fillStyle;
+			context.fill();		
+			// draw the ball label
+			context.font = "10px Comic Sans MS";			
+			context.fillStyle ='white';
+			context.fillText(ball.score+"",ball.x-3,ball.y+3);           // draw the score of the ball
+			assignBalls();
+		}	
+
+		// draw the top edge targets
+		for(var i=0;i<canvasState.t_horz_targets.length;i++){
+			
+			var target=canvasState.t_horz_targets[i];
+			context.strokeStyle = '#000000';
+			context.fillStyle = 'red';
+			context.fillRect(target.x,target.y,target.width,target.height);		
+			
+		}
+
+		// draw the bottom edge targets
+		for(var i=0;i<canvasState.b_horz_targets.length;i++){
+			
+			var target=canvasState.b_horz_targets[i];
+			context.strokeStyle = '#000000';
+			context.fillStyle = 'green';
+			context.fillRect(target.x,target.y,target.width,target.height);		
+			
+		}
+
+		// draw the right edge targets		
+		for(var i=0;i<canvasState.r_vert_targets.length;i++){
+			
+			var target=canvasState.r_vert_targets[i];
+			context.strokeStyle = '#000000';
+			context.fillStyle = 'teal';			
+			context.fillRect(target.x,target.y,target.width,target.height);		
+			
+		}	
+
+		// draw the left edge targets
+		for(var i=0;i<canvasState.l_vert_targets.length;i++){
+			
+			var target=canvasState.l_vert_targets[i];
+			context.strokeStyle = '#000000';
+			context.fillStyle = 'blue';
+			context.fillRect(target.x,target.y,target.width,target.height);		
+			
+		}	
+
+		
+	}
+		
+	// generate next state of the canvas	
+	canvasState.generateNextState=function()
+	{
+		
+		// move each of the balls according to their velocities
+		for(var i=0;i<canvasState.balls.length;i++){			
+			canvasState.balls[i].move();											
+		}
+		
+		// after moving, test if any pair of the balls have collided or not
+		for(var i=0; i<canvasState.balls.length; i++){			
+			var t1=canvasState.balls[i];	
+			for(var j=i+1; j<canvasState.balls.length; j++){			
+				var t2=canvasState.balls[j];
+				if( dist(t1.x,t1.y,t2.x,t2.y)<(t1.r+t2.r)){
+					// if the balls have collided, set the flag to true and add the id of the second ball to first ball's data structure
+					t1.hasCollided=true;
+					t1.collidedballsIds.push(t2.id);
+
+				}	
+			}
+		}
+		
+		// resolve collision of each of the balls using only the first ball it has collided with
+		for(var i=0;i<canvasState.balls.length;i++){
+			if(canvasState.balls[i].hasCollided){
+				canvasState.exchangeVelocity(canvasState.balls[i],canvasState.balls[canvasState.balls[i].collidedballsIds[0]]);	
+			}										
+		}			
+	}
+	
+	
+	canvasState.collision_resolution_swap_velocities=function(ball_a, ball_b){
+		
+		// simple elastic collision
+		
+		var tmp;
+		// swap the x components of the velocity
+		tmp=ball_a.vx;
+		ball_a.vx=ball_b.vx;
+		ball_b.vx=tmp;
+		
+		// swap the y components of the velocity
+		tmp=ball_a.vy;
+		ball_a.vy=ball_b.vy;
+		ball_b.vy=tmp;
+		
+		// push the balls away if velocity is small so that they are less likely to be still in collision in the next update 		
+		if(ball_a.vx < ball_a.r){
+			ball_a.x+=ball_a.vx;
+		}
+		if(ball_b.vx < ball_b.r){
+			ball_b.x+=ball_b.vx;
+		}
+		if(ball_a.vy < ball_a.r){
+			ball_a.y+=ball_a.vy;
+		}
+		if(ball_b.vy < ball_b.r){
+			ball_b.y+=ball_b.vy;
+		}
+
+		// reset the collision state of the balls	
+		ball_a.collidedballsIds=[];
+		ball_a.hasCollided=false;
+		ball_b.collidedballsIds=[];
+		ball_b.hasCollided=false;	
+	}
+	
+	canvasState.exchangeVelocity=function(ball_a, ball_b){		
+		canvasState.collision_resolution_swap_velocities(ball_a, ball_b);
+	}
+	
+		
+	// update the canvas state and draw
+	canvasState.updateState=function(){
+		canvasState.generateNextState();
+		canvasState.draw();
+	
+	}
+	
+	function ballcheck()
+	{
+		if (canvasState.balls.length <= 0)
+		{
+			alert("There are no balls to bounce");
+			document.getElementById("startAnimationButton").disabled = false;
+		}
+		else
+		{
+			animateCanvas();
+			createTimerDiv();
+		}
+	}
+	function animateCanvas()
+	{
+		interval=setInterval(canvasState.updateState,4);
+		document.getElementById("startAnimationButtonId").disabled = true;
+		var timeoutID = window.setTimeout(stopGame, 15000); //set stopGame() to execute after 15 seconds
+		var timerInterval = window.setInterval(createTimerDiv, 1000);
+		if(timer <= -1)
+		{
+			window.clearInterval(timerInterval);
+		}
+	}
+	
+	//stop the balls from moving, determine a winner, send the alert
+	function stopGame()
+	{
+		window.clearInterval(interval);
+		interval = 0;
+		var max = 0;
+		var winner = NaN;
+		for (var i=0; i < players.length; i++)
+		{
+			var player = players[i];
+			if (player.score > max)
+			{
+				max = player.score;
+				winner = players[i];
+			}
+		}
+		alert("Player "+(players.indexOf(winner)+1)+" wins with a score of "+max);
+	}
+
+	function clearCanvas(){
+		var context = canvas.getContext('2d');      
+		context.clearRect(0, 0, canvas.width, canvas.height);
+	
+	}
+	
+		function addPlayers()
+	{
+		//players is # inputted by user.  Caps out at 5.
+		numOfPlayers = document.getElementById("playerNum").value;
+		if(numOfPlayers == 0 || numOfPlayers == null || numOfPlayers == NaN || numOfPlayers == "" || numOfPlayers =="Number of Players (5 max)")
+		{
+			alert("You didn't add any players!");
+			document.getElementById("inputDiv").style.display = "block";
+		}
+		else if (numOfPlayers > 0 && numOfPlayers <= 5)
+		{
+			document.getElementById("inputDiv").style.display = "none";
+		}
+		else if (numOfPlayers > 5)
+		{
+			numOfPlayers = 5;
+			document.getElementById("inputDiv").style.display = "none";
+		}
+		//wipes the inputDiv from the webpage
+		//document.getElementById("inputDiv").style.display = "none";
+		
+		//create player object, add each player to the "players" array
+		for (var i = 0; i < numOfPlayers; i++)
+		{
+			var player = {};
+			players[i] = player;
+			player.score = 0;
+			player.ballCount = 0;
+			player.ballArray = [];
+			players[i] = player;
+		}
+	
+		//assign numbers IDs to each player (player1, player2, etc)
+		for(var p = 0; p < players.length; p++)
+		{
+			var player = players[p];
+			player.id = "player"+n;
+			n = n+1;
+		}
+		
+		createBallCountDivs();
+		createScoreDivs();
+	}
+		function createBallCountDivs()
+		{
+			clearBallCountDivs();
+			//create player ball count divs
+			for (var i = 1; i <= players.length; i++)
+			{
+				document.getElementById("ballCounts").innerHTML+="<div id='ballCount"+i+"'>Player "+i+" Ball Count<br><br><br>"+players[i-1].ballCount+"</div>";
+			}
+		}
+		
+		function clearBallCountDivs()
+		{
+			document.getElementById("ballCounts").innerHTML="";
+		}
+		
+		function clearScoreDivs()
+		{
+			document.getElementById("scores").innerHTML="";
+		}
+		
+		function createScoreDivs()
+		{
+			//create player score divs
+			for (var i = 1; i <= players.length; i++)
+			{
+				document.getElementById("scores").innerHTML+="<div id='score"+i+"'>Player "+i+" Score<br><br><br>"+players[i-1].score+"</div>";
+			}
+		}
+		
+		function createTimerDiv()
+		{
+				clearTimerDiv();
+			if(timer > -1)
+			{
+				document.getElementById("countdownDiv").innerHTML += "Bouncing for "+timer+" seconds.";
+				timer = timer - 1;
+			}
+			else if (timer <= -1)
+			{
+				clearTimerDiv();
+				document.getElementById("countdownDiv").innerHTML = "Game complete!";
+				timer = -1;
+			}
+		}
+		
+		function clearTimerDiv()
+		{
+			document.getElementById("countdownDiv").innerHTML = "";
+		}
+	
+    </script>
+</body>
+</html>      
